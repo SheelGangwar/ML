@@ -1,61 +1,141 @@
-import re
-from typing import Dict, List
+from typing import Dict, List, Any
+
 from schemas import RepoData, SkillConfidence
 
-KNOWN_FRAMEWORKS = {
-    "react": "React",
-    "express": "Express",
-    "mongoose": "MongoDB",
-    "mongodb": "MongoDB",
-    "socket.io": "Socket.IO",
-    "next": "Next.js",
-    "vue": "Vue.js",
-    "fastapi": "FastAPI",
-    "django": "Django",
-    "flask": "Flask",
-    "tailwindcss": "Tailwind CSS",
-    "typescript": "TypeScript"
-}
+from services.skill_extraction.structured_extractor import (
+    extract_structured_skills
+)
 
-def analyze_repositories(repositories: List[RepoData]) -> List[SkillConfidence]:
-    skill_scores: Dict[str, float] = {}
+from services.skill_extraction.semantic_extractor import (
+    extract_semantic_skills
+)
+
+from services.skill_extraction.evidence_aggregator import (
+    aggregate_skill_evidence
+)
+from services.skill_extraction.skill_features import (
+    build_student_skill_features
+)
+
+
+def repo_to_dict(repo: RepoData) -> Dict[str, Any]:
+    """
+    Convert Pydantic repository data into the dictionary
+    expected by the skill extraction pipeline.
+    """
+
+    dependencies = {}
+
+    if repo.dependencies:
+
+        dependencies = {
+            "packageJson": repo.dependencies.packageJson or {},
+            "requirementsTxt": repo.dependencies.requirementsTxt or {},
+            "pyprojectToml": repo.dependencies.pyprojectToml or {}
+        }
+
+    return {
+        "name": repo.name,
+        "languages": repo.languages or {},
+        "topics": repo.topics or [],
+        "readme": repo.readme or "",
+        "dependencies": dependencies
+    }
+
+
+def analyze_repository(repo: RepoData) -> List[Dict]:
+    """
+    Analyze a single GitHub repository and extract its skills.
+    """
+
+    repository = repo_to_dict(repo)
+
+    structured_results = extract_structured_skills(
+        repository
+    )
+
+    semantic_results = extract_semantic_skills(
+        repository.get("readme", "")
+    )
+
+    final_results = aggregate_skill_evidence(
+        structured_results,
+        semantic_results
+    )
+
+    return final_results
+
+
+def analyze_repositories(
+    repositories: List[RepoData]
+) -> List[SkillConfidence]:
+
+    student_skills: Dict[str, Dict] = {}
+
+    # Store skill extraction results from every repository
+    all_repo_results = []
 
     for repo in repositories:
-        # 1. Byte ratio calculation for languages
-        total_bytes = sum(repo.languages.values()) if repo.languages else 0
-        if total_bytes > 0:
-            for lang, bytes_cnt in repo.languages.items():
-                ratio = bytes_cnt / total_bytes
-                skill_scores[lang] = skill_scores.get(lang, 0.0) + (ratio * 1.5)
 
-        # 2. GitHub Topics extraction
-        for topic in repo.topics:
-            normalized = topic.lower()
-            canonical_name = KNOWN_FRAMEWORKS.get(normalized, topic.capitalize())
-            skill_scores[canonical_name] = skill_scores.get(canonical_name, 0.0) + 1.2
+        repo_results = analyze_repository(repo)
 
-        # 3. Package Dependencies parsing
-        if repo.dependencies and repo.dependencies.packageJson:
-            deps = repo.dependencies.packageJson.get("dependencies", {})
-            dev_deps = repo.dependencies.packageJson.get("devDependencies", {})
-            all_deps = {**deps, **dev_deps}
+        # Keep repository-wise results for feature generation
+        all_repo_results.append(repo_results)
 
-            for pkg in all_deps.keys():
-                clean_pkg = pkg.replace("@", "").split("/")[0].lower()
-                if clean_pkg in KNOWN_FRAMEWORKS:
-                    canonical = KNOWN_FRAMEWORKS[clean_pkg]
-                    skill_scores[canonical] = skill_scores.get(canonical, 0.0) + 1.8
+        for result in repo_results:
 
-    if not skill_scores:
-        return []
+            skill_name = result["name"]
+            confidence = result["confidence"]
+            evidence = result["evidence"]
 
-    # Normalize scores into a confidence range [0.5, 0.98]
-    max_score = max(skill_scores.values())
+            if skill_name not in student_skills:
+
+                student_skills[skill_name] = {
+                    "confidences": [],
+                    "evidence": []
+                }
+
+            student_skills[skill_name]["confidences"].append(
+                confidence
+            )
+
+            student_skills[skill_name]["evidence"].extend(
+                evidence
+            )
+        # -----------------------------------------
+    # Build ML-ready skill features
+    # -----------------------------------------
+
+    skill_features = build_student_skill_features(
+        all_repo_results
+    )
+
+    print("\n===== STUDENT SKILL FEATURES =====")
+
+    for feature in skill_features:
+        print(feature)
+
+    print("==================================\n")
+
     results = []
-    for skill, raw_score in skill_scores.items():
-        confidence = round(0.50 + (raw_score / max_score) * 0.48, 2)
-        results.append(SkillConfidence(name=skill, confidence=min(confidence, 0.98)))
 
-    # Sort descending by confidence
-    results.sort(key=lambda x: x.confidence, reverse=True)
+    for skill_name, data in student_skills.items():
+
+        confidences = data["confidences"]
+
+        confidence = max(confidences)
+
+        results.append(
+            SkillConfidence(
+                name=skill_name,
+                confidence=round(confidence, 3),
+                evidence=data["evidence"]
+            )
+        )
+
+    results.sort(
+        key=lambda x: x.confidence,
+        reverse=True
+    )
+
     return results
