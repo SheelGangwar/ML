@@ -1,8 +1,13 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    status
+)
 
 from schemas import (
     AnalyzeProfileRequest,
     AnalyzeProfileResponse,
+    RepoData,
     SkillGapRequest,
     SkillGapResponse,
     GapDetail,
@@ -13,10 +18,14 @@ from schemas import (
     RecommendResponse
 )
 
-from services.profile_analyzer import analyze_repositories
+from services.profile_analyzer import (
+    analyze_repositories,
+    analyze_repository
+)
 
-from services.issue_analyzer import (
-    extract_issue_features
+# NEW ML Issue Analyz
+from issue_analyzer_2.models.issue_analyzer import (
+    analyze_issue as analyze_issue_ml
 )
 
 from services.recommendation_engine import (
@@ -31,6 +40,10 @@ app = FastAPI(
 )
 
 
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
 @app.get("/health")
 def health_check():
 
@@ -39,6 +52,40 @@ def health_check():
         "service": "ML Engine"
     }
 
+
+# =========================================================
+# SINGLE REPOSITORY ANALYSIS
+# =========================================================
+
+@app.post(
+    "/ml/analyze-repository"
+)
+def analyze_single_repository(
+    payload: RepoData
+):
+
+    try:
+
+        skills = analyze_repository(
+            payload
+        )
+
+        return {
+            "success": True,
+            "skills": skills
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Repository analysis failed: {str(e)}"
+        )
+
+
+# =========================================================
+# PROFILE ANALYSIS
+# =========================================================
 
 @app.post(
     "/ml/analyze-profile",
@@ -66,6 +113,10 @@ def analyze_profile(
             detail=f"Profile analysis failed: {str(e)}"
         )
 
+
+# =========================================================
+# SKILL GAP
+# =========================================================
 
 @app.post(
     "/ml/skill-gap",
@@ -110,6 +161,10 @@ def skill_gap(
     )
 
 
+# =========================================================
+# ISSUE ANALYSIS - NEW ML PIPELINE
+# =========================================================
+
 @app.post(
     "/ml/analyze-issue",
     response_model=AnalyzeIssueResponse
@@ -118,31 +173,39 @@ def analyze_issue(
     payload: AnalyzeIssueRequest
 ):
 
-    techs, difficulty, concepts = extract_issue_features(
-        payload.title,
-        payload.description,
-        payload.labels
-    )
+    try:
 
-    if (
-        not techs
-        and payload.repository
-        and payload.repository.language
-    ):
-
-        techs.append(
-            payload.repository.language
+        result = analyze_issue_ml(
+            title=payload.title,
+            description=payload.description,
+            labels=", ".join(payload.labels),
+            repository_language=(
+                payload.repository.language
+                if payload.repository
+                else ""
+            )
         )
 
-    return AnalyzeIssueResponse(
-        success=True,
-        analysis=IssueAnalysisDetail(
-            technologies=techs,
-            difficulty=difficulty,
-            concepts=concepts
+        return AnalyzeIssueResponse(
+            success=True,
+            analysis=IssueAnalysisDetail(
+                technologies=result["technologies"],
+                difficulty=result["difficulty"],
+                concepts=result["concepts"]
+            )
         )
-    )
 
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Issue analysis failed: {str(e)}"
+        )
+
+
+# =========================================================
+# RECOMMENDATIONS
+# =========================================================
 
 @app.post(
     "/ml/recommend",
@@ -162,6 +225,10 @@ def recommend_issues(
         recommendations=recommendations
     )
 
+
+# =========================================================
+# LOCAL DEVELOPMENT
+# =========================================================
 
 if __name__ == "__main__":
 
