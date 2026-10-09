@@ -146,14 +146,25 @@ class StudentPayload(BaseModel):
     skills: List[SkillConfidence]
 
 
+
 class CandidateIssue(BaseModel):
     id: str
 
-    technologies: List[str]
+    technologies: List[str] = Field(
+        default_factory=list
+    )
 
-    difficulty: str
+    difficulty: str = "unknown"
 
     description: Optional[str] = ""
+
+    title: Optional[str] = ""
+
+    labels: List[str] = Field(
+        default_factory=list
+    )
+
+    repository_language: Optional[str] = ""
 
 
 class RecommendRequest(BaseModel):

@@ -15,8 +15,8 @@ from schemas import (
     AnalyzeIssueResponse,
     IssueAnalysisDetail,
     RecommendRequest,
-    RecommendResponse
-)
+    RecommendResponse,
+    RecommendationItem)
 
 from services.profile_analyzer import (
     analyze_repositories,
@@ -28,10 +28,9 @@ from issue_analyzer_2.models.issue_analyzer import (
     analyze_issue as analyze_issue_ml
 )
 
-from services.recommendation_engine import (
-    calculate_recommendations
+from recommendation.recommendation_engine import (
+    recommend_issues as rank_issues
 )
-
 
 app = FastAPI(
     title="OpenSourceMentor ML Service",
@@ -207,6 +206,10 @@ def analyze_issue(
 # RECOMMENDATIONS
 # =========================================================
 
+# =========================================================
+# RECOMMENDATIONS
+# =========================================================
+
 @app.post(
     "/ml/recommend",
     response_model=RecommendResponse
@@ -215,17 +218,56 @@ def recommend_issues(
     payload: RecommendRequest
 ):
 
-    recommendations = calculate_recommendations(
-        payload.student.skills,
-        payload.issues
-    )
+    try:
+        analyzed_issues = []
 
-    return RecommendResponse(
-        success=True,
-        recommendations=recommendations
-    )
+        # Step 1: Analyze each issue using the trained ML pipeline.
+        for issue in payload.issues:
 
+            result = analyze_issue_ml(
+                title=issue.title or "",
+                description=issue.description or "",
+                labels=", ".join(issue.labels),
+                repository_language=issue.repository_language or ""
+            )
 
+            technologies = list(dict.fromkeys(
+                (issue.technologies or [])
+                + result.get("technologies", [])
+            ))
+
+            analyzed_issues.append({
+                "id": issue.id,
+                "title": issue.title or "",
+                "description": issue.description or "",
+                "technologies": technologies,
+                "concepts": result.get("concepts", []),
+                "difficulty": result.get(
+                    "difficulty",
+                    issue.difficulty or "unknown"
+                )
+            })
+
+        # Step 2: Rank issues after analysis is complete.
+        recommendations = rank_issues(
+            student=payload.student,
+            issues=analyzed_issues
+        )
+
+        # Step 3: Return the existing response schema.
+        return RecommendResponse(
+            success=True,
+            recommendations=[
+                RecommendationItem(**item)
+                for item in recommendations
+            ]
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Recommendation failed: {str(e)}"
+        )
 # =========================================================
 # LOCAL DEVELOPMENT
 # =========================================================
