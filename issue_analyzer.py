@@ -5,20 +5,11 @@ import numpy as np
 from scipy.sparse import hstack
 
 
-BASE_DIR = Path(__file__).resolve().parent
-
-# Load trained ML pipelines
-technology_artifact = joblib.load(
-    BASE_DIR / "technology_pipeline.pkl"
-)
-
-concept_artifact = joblib.load(
-    BASE_DIR / "concept_pipeline.pkl"
-)
-
-difficulty_artifact = joblib.load(
-    BASE_DIR / "difficulty_pipeline.pkl"
-)
+BASE_DIR = Path(__file__).resolve().parent.parent 
+MODEL_DIR = BASE_DIR / "issue_analyzer_2" / "models" 
+technology_artifact = joblib.load( MODEL_DIR / "technology_pipeline.pkl" )
+concept_artifact = joblib.load( MODEL_DIR / "concept_pipeline.pkl" )
+difficulty_artifact = joblib.load( MODEL_DIR / "difficulty_pipeline.pkl" )
 
 
 def build_issue_text(

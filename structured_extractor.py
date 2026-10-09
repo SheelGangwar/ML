@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, Any
 
-from .taxonomy import SKILL_TAXONOMY
+from taxonomy import SKILL_TAXONOMY
 
 
 def normalize(value: str) -> str:

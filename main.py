@@ -24,11 +24,11 @@ from services.profile_analyzer import (
 )
 
 # NEW ML Issue Analyz
-from issue_analyzer_2.models.issue_analyzer import (
+from services.issue_analyzer import (
     analyze_issue as analyze_issue_ml
 )
 
-from recommendation.recommendation_engine import (
+from services.recommendation_engine import (
     recommend_issues as rank_issues
 )
 

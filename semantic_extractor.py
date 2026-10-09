@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .taxonomy import SKILL_TAXONOMY
+from taxonomy import SKILL_TAXONOMY
 
 
 MODEL_NAME = "all-MiniLM-L6-v2"
